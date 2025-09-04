@@ -13,7 +13,7 @@ if (args[1]) {
 }
 
 const server = jsonServer.create();
-const router = jsonServer.router(path.join(__dirname, dbFile));
+const router = jsonServer.router(path.join(__dirname, dbFile), { id: '_id' });
 const middlewares = jsonServer.defaults();
 
 server.use(middlewares);
@@ -27,10 +27,16 @@ server.use((req, res, next) => {
 });
 
 server.use((req, res, next) => {
-    if (req.query.paginated) {
-        // Clone req.query and remove pageIndex/pageSize for db.get
-        const { pageIndex, pageSize, ...rest } = req.query;
-        const collection = req.path.split('/')[1];
+    const { pageIndex, pageSize, paginated, ...rest } = req.query;
+    // Only handle GET requests to collection endpoints with paginated param
+    const pathParts = req.path.split('/').filter(Boolean);
+
+    if (
+        req.method === 'GET' &&
+        paginated &&
+        pathParts.length === 1 // Only match /collection, not /collection/:id
+    ) {
+        const collection = pathParts[0];
         const db = router.db;
         let items = db.get(collection);
 
@@ -38,20 +44,50 @@ server.use((req, res, next) => {
         Object.keys(rest).forEach(key => {
             items = items.filter(item => String(item[key]) === String(rest[key]));
         });
-
         const total = items.size().value();
         const page = parseInt(pageIndex, 10) || 0;
         const size = parseInt(pageSize, 10) || 10;
-        const data = items.slice(page * size, (page + 1) * size).value();
+        const data = items.value().slice(page * size, (page + 1) * size);
         return res.json({ data, total });
+    }
+    next();
+});
+
+server.get('/:collection/:id', (req, res, next) => {
+    const { collection, id } = req.params;
+    const db = router.db;
+    const item = db.get(collection).find({ _id: id }).value();
+    if (!item) {
+        return res.status(404).json({ error: 'Not found' });
+    }
+    res.json(item);
+});
+
+server.use(jsonServer.bodyParser);
+
+server.use((req, res, next) => {
+    if (req.method === 'POST') {
+        if (!req.body._id) {
+            req.body._id = crypto.randomBytes(12).toString('hex');
+        }
+        req.body.createdAt = new Date().toISOString();
+        req.body.updatedAt = req.body.createdAt;
+    }
+    if (req.method === 'PUT' || req.method === 'PATCH') {
+        req.body.updatedAt = new Date().toISOString();
     }
     next();
 });
 
 
 
+
+
+
+
 server.use(router);
 const morgan = require('morgan');
+const crypto = require('crypto');
 
 server.use(morgan('combined'));
 
