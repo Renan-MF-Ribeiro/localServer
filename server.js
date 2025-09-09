@@ -1,5 +1,8 @@
 const jsonServer = require('json-server');
 const path = require('path');
+const morgan = require('morgan');
+const crypto = require('crypto');
+
 
 // Parse command line arguments (positional: dbFile, port)
 const args = process.argv.slice(2);
@@ -13,7 +16,8 @@ if (args[1]) {
 }
 
 const server = jsonServer.create();
-const router = jsonServer.router(path.join(__dirname, dbFile), { id: '_id' });
+const router = jsonServer.router(path.join(__dirname, 'db', dbFile), { id: '_id' });
+
 const middlewares = jsonServer.defaults();
 
 server.use(middlewares);
@@ -23,6 +27,7 @@ server.use((req, res, next) => {
     if (collection && !db.has(collection).value()) {
         db.set(collection, []).write();
     }
+    console.log(`${req.method} ${req.path}`);
     next();
 });
 
@@ -50,6 +55,7 @@ server.use((req, res, next) => {
         const data = items.value().slice(page * size, (page + 1) * size);
         return res.json({ data, total });
     }
+    console.log(`${req.method} ${req.path}`);
     next();
 });
 
@@ -63,6 +69,8 @@ server.get('/:collection/:id', (req, res, next) => {
     res.json(item);
 });
 
+
+
 server.use(jsonServer.bodyParser);
 
 server.use((req, res, next) => {
@@ -74,9 +82,23 @@ server.use((req, res, next) => {
         req.body.updatedAt = req.body.createdAt;
     }
     if (req.method === 'PUT' || req.method === 'PATCH') {
+        console.log('Updating updatedAt timestamp');
         req.body.updatedAt = new Date().toISOString();
     }
     next();
+});
+
+server.patch('/:collection/:id', (req, res, next) => {
+    console.log('PATCH request received');
+    const { collection, id } = req.params;
+    const db = router.db;
+    const item = db.get(collection).find({ _id: id }).value();
+    if (!item) {
+        return res.status(404).json({ error: 'Not found' });
+    }
+    db.get(collection).find({ _id: id }).assign(req.body).write();
+    const updated = db.get(collection).find({ _id: id }).value();
+    res.json(updated);
 });
 
 
@@ -85,12 +107,10 @@ server.use((req, res, next) => {
 
 
 
-server.use(router);
-const morgan = require('morgan');
-const crypto = require('crypto');
+
 
 server.use(morgan('combined'));
-
+server.use(router);
 server.listen(port, () => {
     console.log(`JSON Server is running on http://localhost:${port} (DB: ${dbFile})`);
 });

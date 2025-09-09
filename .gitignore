@@ -3,4 +3,4 @@
 /projects/image-editor/node_modules
 npm-debug.log
 yarn-error.log
-*.json
+/db/*.json
