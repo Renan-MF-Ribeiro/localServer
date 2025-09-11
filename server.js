@@ -103,11 +103,16 @@ server.patch('/:collection/:id', (req, res, next) => {
 
 
 
-
-
-
-
-
+server.delete('/:collection/:id', (req, res, next) => {
+    const { collection, id } = req.params;
+    const db = router.db;
+    const item = db.get(collection).find({ _id: id }).value();
+    if (!item) {
+        return res.status(404).json({ error: 'Not found' });
+    }
+    db.get(collection).remove({ _id: id }).write();
+    res.status(204).end();
+});
 
 server.use(morgan('combined'));
 server.use(router);
